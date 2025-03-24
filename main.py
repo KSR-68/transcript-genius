@@ -279,7 +279,7 @@ def display_quiz(quiz_data):
 def main():
     st.set_page_config(page_title="YouTube Transcript Tool", layout="wide")
     
-    st.markdown("<h1 style='text-align: center;'>YouTube Transcript Summarizer</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>Transcript Genius</h1>", unsafe_allow_html=True)
     
     youtube_url = st.text_input("Enter the YouTube URL")
     
