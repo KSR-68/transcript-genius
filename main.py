@@ -11,9 +11,12 @@ def generate_transcript(youtube_url):
         return ""
     
     try:
-        video_id = youtube_url.split("v=")[1]
-        if "&" in video_id:
-            video_id = video_id.split("&")[0]
+        if "youtu.be" in youtube_url:
+            video_id = youtube_url.split("youtu.be/")[1].split("?")[0]
+        else:
+            video_id = youtube_url.split("v=")[1].split("&")[0]
+            if "&" in video_id:
+                video_id = video_id.split("&")[0]
         try:
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
         except Exception:
