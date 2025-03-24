@@ -11,7 +11,7 @@ Try: https://transcript-genius.streamlit.app/
 2. Create a Folder named .streamlit and inside this folder create a file secrets.toml and in that file write your API key in this format:
 
 ```bash
-GOOGLE_API_KEY=YOUR_API_KEY
+GOOGLE_API_KEY="YOUR_API_KEY"
 ```
 You can Generate API KEY from this link: https://aistudio.google.com/apikey
 
