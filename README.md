@@ -2,6 +2,8 @@
 
 ## Summarize youtube videos and test your knowledge if you watched by generating a Quiz.
 
+Try: https://transcript-genius.streamlit.app/
+
 ### If you want to run locally follow these steps:
 
 1. Create a virtual env (optional)
