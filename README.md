@@ -8,7 +8,7 @@ Try: https://transcript-genius.streamlit.app/
 
 1. Create a virtual env (optional)
 
-2. Create a .env File and write your API in it like this:
+2. Create a Folder named .streamlit and inside this folder create a file secrets.toml and in that file write your API key in this format:
 
 ```bash
 GOOGLE_API_KEY=YOUR_API_KEY
