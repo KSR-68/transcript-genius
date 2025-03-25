@@ -1,6 +1,6 @@
 # Transcript Genius
 
-## Summarize youtube videos and test your knowledge if you watched by generating a Quiz.
+## Summarize youtube videos and test your knowledge by generating a Quiz.
 
 Try: https://transcript-genius.streamlit.app/
 
