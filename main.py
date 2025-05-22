@@ -56,7 +56,7 @@ def format_transcript(transcript):
 # Summarize the text
 def summarize(text):
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     prompt = text + "\n Summarize the above youtube transcript in points"
     response = model.generate_content(prompt)
     return response.text
@@ -64,7 +64,7 @@ def summarize(text):
 # Generate Quiz
 def generate_quiz(text):
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     
     #Prompt for generating quiz and make parsing easy
     prompt = (
