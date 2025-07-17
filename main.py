@@ -3,319 +3,287 @@ import re
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 import os
+from dotenv import load_dotenv
+import json
 
-# Core Logic
+# Load environment variables from .env file
+load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# --- Core Logic ---
+
+def get_video_id(youtube_url):
+    """Extracts the video ID from various YouTube URL formats."""
+    # Regex to find the video ID from various YouTube URL patterns
+    patterns = [
+        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11}).*'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, youtube_url)
+        if match:
+            return match.group(1)
+    return None
+
 def generate_transcript(youtube_url):
+    """Fetches the transcript for a given YouTube URL."""
     if not youtube_url:
-        st.warning("Please enter a valid YouTube URL")
+        st.warning("Please enter a valid YouTube URL.")
         return ""
-    
+
+    video_id = get_video_id(youtube_url)
+    if not video_id:
+        st.error("Invalid YouTube URL. Could not extract video ID.")
+        return ""
+
     try:
-        if "youtu.be" in youtube_url:
-            video_id = youtube_url.split("youtu.be/")[1].split("?")[0]
-        else:
-            video_id = youtube_url.split("v=")[1].split("&")[0]
-            if "&" in video_id:
-                video_id = video_id.split("&")[0]
-        try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-        except Exception:
-            # Try fetching with auto-generated subtitles
-            try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en-US', 'en'])
-            except:
-                st.error("Could not fetch subtitles. Please ensure the video has subtitles enabled.")
-                return ""
-        text = format_transcript(transcript)
-        text = remove_timestamps(text)
+        # Fetch transcript, trying 'en' first, then common fallbacks
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US'])
+        text = " ".join([d['text'] for d in transcript_list])
         return text
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
+        st.error(f"Could not fetch subtitles for this video. Please ensure the video has English subtitles enabled. Error: {e}")
         return ""
 
-# Remove Timestamps
-def remove_timestamps(text):
-    timestamp_pattern = r'\[\d+:\d+:\d+\.\d+ --> \d+:\d+:\d+\.\d+\]'
-    return re.sub(timestamp_pattern, '', text)
-
-# Format the time into HH:MM:SS
-def format_time(seconds):
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):05.2f}"
-
-# Format the transcript
-def format_transcript(transcript):
-    formatted_transcript = ""
-    for entry in transcript:
-        start_time = entry["start"]
-        end_time = entry["start"] + entry["duration"]
-        formatted_transcript += f"[{format_time(start_time)} --> {format_time(end_time)}] {entry['text']}\n"
-    return formatted_transcript
-
-# Summarize the text
 def summarize(text):
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    prompt = text + "\n Summarize the above youtube transcript in points"
-    response = model.generate_content(prompt)
-    return response.text
+    """Generates a summary of the text using the Gemini API."""
+    if not text:
+        return ""
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        prompt = f"Summarize the following YouTube transcript in clear, concise points:\n\n{text}"
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        st.error(f"An error occurred during summarization: {e}")
+        return ""
 
-# Generate Quiz
 def generate_quiz(text):
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-2.0-flash')
-    
-    #Prompt for generating quiz and make parsing easy
-    prompt = (
-        f"{text}\n\n"
-        "Please generate a quiz based on the above YouTube transcript with exactly 10 questions total, "
-        "divided as follows:\n"
-        "- 6 multiple choice questions (a, b, c, d options)\n"
-        "- 2 true/false questions\n"
-        "- 2 fill-in-the-blank questions\n\n"
-        "Format the quiz EXACTLY as follows, with NO ADDITIONAL TEXT before Question 1:\n" #Yeah because I have remove it myself by code why not make it easy for me by not generating :)
-        "Question 1: [question text]\n"
-        "a) [option text]\n"
-        "b) [option text]\n"
-        "c) [option text]\n"
-        "d) [option text]\n\n"
-        "Question 2: [question text]\n"
-        "a) [option text]\n"
-        "... and so on\n\n"
-        "For true/false questions:\n"
-        "Question X: [statement]\n"
-        "True\n"
-        "False\n\n"
-        "For fill-in-the-blank:\n"
-        "Question X: [sentence with _____ for the blank]\n\n"
-        "After all questions, include 'ANSWER KEY:' followed by the answers in the format:\n"
-        "1. [correct answer]\n"
-        "2. [correct answer]\n"
-        "And so on for all 10 questions."
-    )
-    
-    response = model.generate_content(prompt)
-    return response.text
+    """Generates a quiz from the text using the Gemini API and ensures valid JSON output."""
+    if not text:
+        return None
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
-def parse_quiz(quiz_text):
-    quiz_data = {
-        'questions': [],
-        'answer_key': {}
-    }
-    
-    # Separate questions from answer key
-    # Because of better prompt now I can easily separate the questions and answer key
-    parts = quiz_text.split("ANSWER KEY:", 1)
-    questions_text = parts[0]
-    answer_key_text = parts[1] if len(parts) > 1 else ""
-    
-    # Extract questions using regex pattern that specifically looks for "Question X:" format
-    questions_pattern = r'Question\s+(\d+):\s*(.*?)(?=Question\s+\d+:|ANSWER KEY:|$)'
-    question_matches = re.findall(questions_pattern, questions_text, re.DOTALL)
-    
-    for num_str, content in question_matches:
-        question_num = int(num_str)
-        content = content.strip()
-        lines = content.split('\n')
-        
-        question_data = {
-            'number': question_num,
-            'text': lines[0].strip(),
-            'type': 'multiple_choice',
-            'options': []
-        }
-        
-        if "True" in content and "False" in content and len(lines) <= 3:
-            question_data['type'] = 'true_false'
-            question_data['options'] = [
-                {'letter': 'true', 'text': 'True'},
-                {'letter': 'false', 'text': 'False'}
-            ]
-        elif "_____" in content or "________" in content:
-            question_data['type'] = 'fill_blank'
-            question_data['options'] = []
+        prompt = (
+            f"{text}\n\n"
+            "Based on the text above, generate a quiz as a single, valid JSON object.\n"
+            "Your entire response must be only the JSON object, starting with `{` and ending with `}`. Do not include any introductory text, explanations, or markdown formatting.\n\n"
+            "The JSON object must meet these requirements:\n"
+            "1.  It must have a root object with two keys: `\"questions\"` (an array) and `\"answer_key\"` (an object).\n"
+            "2.  The `\"questions\"` array must contain exactly 10 questions total:\n"
+            "    - 6 of type `\"multiple_choice\"`\n"
+            "    - 2 of type `\"true_false\"`\n"
+            "    - 2 of type `\"fill_blank\"`\n\n"
+            "Use the following precise structure for each question type:\n\n"
+            "## For `\"multiple_choice\"` questions:\n"
+            "The object must have `\"number\"`, `\"type\"`, `\"text\"`, and `\"options\"` keys. The `\"options\"` key must be an array of four objects, each with a `\"letter\"` and `\"text\"`. The corresponding answer in `\"answer_key\"` must be the correct letter (e.g., `\"b\"`).\n"
+            "Example:\n"
+            "{\n"
+            "  \"number\": 1,\n"
+            "  \"type\": \"multiple_choice\",\n"
+            "  \"text\": \"What is the primary topic of the text?\",\n"
+            "  \"options\": [\n"
+            "    {\"letter\": \"a\", \"text\": \"Option A\"},\n"
+            "    {\"letter\": \"b\", \"text\": \"Option B\"},\n"
+            "    {\"letter\": \"c\", \"text\": \"Option C\"},\n"
+            "    {\"letter\": \"d\", \"text\": \"Option D\"}\n"
+            "  ]\n"
+            "}\n\n"
+            "## For `\"true_false\"` questions:\n"
+            "The object must have `\"number\"`, `\"type\"`, `\"text\"`, and `\"options\"` keys. The `\"options\"` must be an array with two fixed options: True (`\"a\"`) and False (`\"b\"`). The corresponding answer in `\"answer_key\"` must be `\"a\"` or `\"b\"`.\n"
+            "Example:\n"
+            "{\n"
+            "  \"number\": 7,\n"
+            "  \"type\": \"true_false\",\n"
+            "  \"text\": \"Is the following statement true?\",\n"
+            "  \"options\": [\n"
+            "    {\"letter\": \"a\", \"text\": \"True\"},\n"
+            "    {\"letter\": \"b\", \"text\": \"False\"}\n"
+            "  ]\n"
+            "}\n\n"
+            "## For `\"fill_blank\"` questions:\n"
+            "The object must have `\"number\"`, `\"type\"`, and `\"text\"` keys. The `\"options\"` key must be omitted. The corresponding answer in `\"answer_key\"` must be the string that completes the sentence.\n"
+            "Example:\n"
+            "{\n"
+            "  \"number\": 9,\n"
+            "  \"type\": \"fill_blank\",\n"
+            "  \"text\": \"The most important concept mentioned was ______.\"\n"
+            "}\n"
+        )
+
+        response = model.generate_content(prompt)
+
+        # Clean the response to ensure it's valid JSON
+        if response and response.text:
+            clean_text = response.text.strip()
+            # Remove markdown fences that the model might add
+            if clean_text.startswith("```json"):
+                clean_text = clean_text[7:]
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3]
+            
+            # Now, parse the cleaned text
+            return json.loads(clean_text.strip())
         else:
-          
-            for line in lines[1:]:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                # Match options like "a) Option text" or "a. Option text"
-                match = re.match(r'([a-d])[).]\s*(.*)', line)
-                if match:
-                    letter, text = match.groups()
-                    text = text.rstrip('(').strip()
-                    question_data['options'].append({'letter': letter, 'text': text})
-        
-        quiz_data['questions'].append(question_data)
-    
-    # Parse answer key
-    if answer_key_text:
-        answer_lines = answer_key_text.strip().split('\n')
-        for line in answer_lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            match = re.match(r'(\d+)[.)]?\s*(.*)', line)
-            if match:
-                q_num, answer = match.groups()
-                q_num = int(q_num)
-                
-                # Clean up the answer text
-                answer = answer.strip()
-                if answer.startswith('(') and answer.endswith(')'):
-                    answer = answer[1:-1]
-                
-                # For multiple choice, extract just the letter
-                mc_match = re.match(r'[(.]*([a-d])[).]*', answer)
-                if mc_match:
-                    answer = mc_match.group(1)
-                
-                # Convert True/False to lowercase for consistency
-                if answer.lower() in ['true', 'false']:
-                    answer = answer.lower()
-                    
-                quiz_data['answer_key'][q_num] = answer
-    
-    return quiz_data
+            st.error("The model returned an empty response.")
+            return None
+            
+    except json.JSONDecodeError as e:
+        st.error(f"Failed to parse quiz JSON. The model's response was not valid JSON. Error: {e}")
+        st.text_area("Model's Raw Response:", value=response.text if response else "No response", height=200)
+        return None
+    except Exception as e:
+        st.error(f"An error occurred while generating the quiz: {e}")
+        return None
 
 def display_quiz(quiz_data):
-    if not quiz_data or not quiz_data['questions']:
-        st.error("Failed to parse quiz data.")
+    """Renders the quiz form and handles submission."""
+    if not quiz_data or 'questions' not in quiz_data or not quiz_data['questions']:
+        st.error("Failed to generate or display quiz data.")
         return
-    
-    container = st.container()
-    with container:
-        col1, col2, col3 = st.columns([1, 3, 1])
+
+    with st.form(key="quiz_form"):
+        user_answers = {}
+        for question in quiz_data['questions']:
+            q_num = question['number']
+            q_text = question['text']
+            q_type = question['type']
+
+            st.markdown(f"**Question {q_num}:** {q_text}")
+
+            if q_type == 'multiple_choice':
+                options = {opt['letter']: f"{opt['letter'].upper()}) {opt['text']}" for opt in question.get('options', [])}
+                if options:
+                    user_answers[q_num] = st.radio(
+                        "Select your answer:",
+                        list(options.keys()),
+                        format_func=lambda x: options[x],
+                        key=f"q{q_num}",
+                        label_visibility="collapsed"
+                    )
+            elif q_type == 'true_false':
+                options = {opt['letter']: opt['text'] for opt in question.get('options', [])}
+                if options:
+                    user_answers[q_num] = st.radio(
+                        "Select your answer:",
+                        list(options.keys()),
+                        format_func=lambda x: options[x],
+                        key=f"q{q_num}",
+                        label_visibility="collapsed"
+                    )
+            elif q_type == 'fill_blank':
+                user_answers[q_num] = st.text_input(
+                    "Your answer:",
+                    key=f"q{q_num}",
+                    label_visibility="collapsed"
+                )
         
-        with col2:
-            st.title("YouTube Video Quiz")
-            st.write("Answer all questions and submit to see your score.")
-            
-            
-            with st.form(key="quiz_form"):
-                user_answers = {}
+        submit_button = st.form_submit_button(label="Submit Quiz")
+
+        if submit_button:
+            score = 0
+            results = []
+            answer_key = quiz_data.get('answer_key', {})
+            questions = quiz_data.get('questions', [])
+
+            for q_num, user_answer in user_answers.items():
+                correct_answer_val = answer_key.get(str(q_num))
+                is_correct = user_answer.strip().lower() == str(correct_answer_val).strip().lower()
                 
-                for question in quiz_data['questions']: #Parsing according to the question type
-                    q_num = question['number']
-                    q_text = question['text']
-                    q_type = question['type']
+                # Find the full question details
+                question_details = next((q for q in questions if q['number'] == q_num), None)
+
+                if is_correct:
+                    score += 1
+                    results.append(f"**Question {q_num}: Correct!** ✅")
+                else:
+                    results.append(f"**Question {q_num}: Incorrect!** ❌")
+                    results.append(f"  - Your answer: `{user_answer}`")
                     
-                    st.markdown(f"**Question {q_num}:** {q_text}")
-                    
-                    if q_type == 'multiple_choice':
-                        options = {opt['letter']: f"{opt['letter']}) {opt['text']}" for opt in question['options']}
-                        if options:
-                            user_answers[q_num] = st.radio(
-                                f"Select your answer for question {q_num}:",
-                                options.keys(),
-                                format_func=lambda x: options[x],
-                                key=f"q{q_num}"
-                            )
-                        else:
-                            st.warning(f"No options found for question {q_num}")
-                    
-                    elif q_type == 'true_false':
-                        user_answers[q_num] = st.radio(
-                            f"Select your answer for question {q_num}:",
-                            ['true', 'false'],
-                            format_func=lambda x: x.capitalize(),
-                            key=f"q{q_num}"
-                        )
-                    
-                    elif q_type == 'fill_blank':
-                        user_answers[q_num] = st.text_input(
-                            f"Your answer for question {q_num}:",
-                            key=f"q{q_num}"
-                        )
-                
-                # Submit button
-                submit_button = st.form_submit_button(label="Submit Quiz")
-                
-                if submit_button:
-                    # Calculate score
-                    score = 0
-                    results = []
-                    
-                    for q_num, user_answer in user_answers.items():
-                        correct_answer = quiz_data['answer_key'].get(q_num, "")
-                        
-                        # Find question type
-                        question_type = next((q['type'] for q in quiz_data['questions'] if q['number'] == q_num), None)
-                        
-                       
-                        if question_type == 'fill_blank':
-                            is_correct = user_answer.lower().strip() == correct_answer.lower().strip()
-                        else:
-                            is_correct = user_answer.lower().strip() == correct_answer.lower().strip()
-                        
-                        if is_correct:
-                            score += 1
-                            results.append(f"Question {q_num}: Correct! ✅")
-                        else:
-                            if question_type == 'multiple_choice':
-                                # Find the text of the correct answer
-                                question = next((q for q in quiz_data['questions'] if q['number'] == q_num), None)
-                                if question:
-                                    correct_option = next((opt for opt in question['options'] 
-                                                         if opt['letter'] == correct_answer), None)
-                                    correct_text = f"{correct_answer}) {correct_option['text']}" if correct_option else correct_answer
-                                    results.append(f"Question {q_num}: Incorrect ❌ - Correct answer: {correct_text}")
-                            elif question_type == 'true_false':
-                                results.append(f"Question {q_num}: Incorrect ❌ - Correct answer: {correct_answer.capitalize()}")
-                            else:  
-                                results.append(f"Question {q_num}: Incorrect ❌ - Correct answer: {correct_answer}")
-                    
-                   
-                    st.success(f"Your Score: {score}/{len(user_answers)}")
-                    
-                    with st.expander("See detailed results"):
-                        for result in results:
-                            st.markdown(result)
+                    # Display the correct answer in a more readable format
+                    if question_details:
+                        q_type = question_details['type']
+                        if q_type == 'true_false':
+                            correct_text = "True" if correct_answer_val == 'a' else "False"
+                            results.append(f"  - Correct answer: `{correct_text}`")
+                        elif q_type == 'multiple_choice':
+                            # Find the text of the correct option
+                            correct_option = next((opt['text'] for opt in question_details.get('options', []) if opt['letter'] == correct_answer_val), "N/A")
+                            results.append(f"  - Correct answer: `{correct_answer_val.upper()}) {correct_option}`")
+                        else: # fill_blank
+                            results.append(f"  - Correct answer: `{correct_answer_val}`")
+                    else:
+                        results.append(f"  - Correct answer: `{correct_answer_val}`")
+
+
+            st.success(f"### Your Score: {score}/{len(questions)}")
+            with st.expander("See detailed results"):
+                for result in results:
+                    st.markdown(result)
+
 
 def main():
-    st.set_page_config(page_title="YouTube Transcript Tool", layout="wide")
-    
-    st.markdown("<h1 style='text-align: center;'>Transcript Genius</h1>", unsafe_allow_html=True)
-    
-    youtube_url = st.text_input("Enter the YouTube URL")
-    
+    """Main function to run the Streamlit app."""
+    st.set_page_config(page_title="Transcript Genius", layout="wide")
+    st.markdown("<h1 style='text-align: center; color: #4A4A4A;'>🚀 Transcript Genius</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Turn any YouTube video into a summary or a quiz instantly!</p>", unsafe_allow_html=True)
+
+    # Initialize session state
+    if 'quiz_data' not in st.session_state:
+        st.session_state.quiz_data = None
+    if 'summary' not in st.session_state:
+        st.session_state.summary = ""
+    if 'current_url' not in st.session_state:
+        st.session_state.current_url = ""
+
+    youtube_url = st.text_input("Enter the YouTube URL", placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
     col1, col2 = st.columns(2)
     with col1:
-        generate_button = st.button("Generate Summary")
+        generate_summary_button = st.button("📝 Generate Summary")
     with col2:
-        quiz_button = st.button("Generate Quiz")
-    
-    if generate_button: #Generate Summary Button
+        generate_quiz_button = st.button("🧠 Generate Quiz")
+
+    if youtube_url and youtube_url != st.session_state.current_url:
+        # Clear old data if new URL is entered
+        st.session_state.summary = ""
+        st.session_state.quiz_data = None
+        st.session_state.current_url = youtube_url
+
+    if generate_summary_button:
         if youtube_url:
             with st.spinner("Generating summary..."):
-                text = generate_transcript(youtube_url)
-                if text:
-                    summary = summarize(text)
-                    st.markdown("## Summary")
-                    st.markdown(summary)
+                transcript = generate_transcript(youtube_url)
+                if transcript:
+                    st.session_state.summary = summarize(transcript)
+                    st.session_state.quiz_data = None # Clear quiz if summary is generated
         else:
-            st.warning("Please enter a YouTube URL first")
-    
-    if quiz_button: #Generate Quiz Button
+            st.warning("Please enter a YouTube URL first.")
+
+    if generate_quiz_button:
         if youtube_url:
-            with st.spinner("Generating quiz..."):
-                text = generate_transcript(youtube_url)
-                if text:
-                    quiz_text = generate_quiz(text)
-                    quiz_data = parse_quiz(quiz_text)
-                    st.session_state.quiz_data = quiz_data
-                    display_quiz(quiz_data)
-                else:
-                    st.error("Could not generate quiz. Please try again.")
+            with st.spinner("Generating quiz... This may take a moment."):
+                transcript = generate_transcript(youtube_url)
+                if transcript:
+                    st.session_state.quiz_data = generate_quiz(transcript)
+                    st.session_state.summary = "" # Clear summary if quiz is generated
         else:
-            st.warning("Please enter a YouTube URL first")
-    
-    if 'quiz_data' in st.session_state and not generate_button and not quiz_button:
+            st.warning("Please enter a YouTube URL first.")
+
+    # Display content based on session state
+    if st.session_state.summary:
+        st.markdown("---")
+        st.subheader("Summary")
+        st.markdown(st.session_state.summary)
+
+    if st.session_state.quiz_data:
+        st.markdown("---")
+        st.subheader("Quiz Time!")
         display_quiz(st.session_state.quiz_data)
+
 
 if __name__ == "__main__":
     main()

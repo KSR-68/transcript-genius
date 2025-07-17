@@ -1,31 +1,31 @@
 # Transcript Genius
 
-## Summarize youtube videos and test your knowledge by generating a Quiz.
+Turn any YouTube video into a summary or quiz instantly!
 
-Try: https://transcript-genius.streamlit.app/
+## Setup Instructions
 
-### If you want to run locally follow these steps:
+1. **Install [UV](https://github.com/astral-sh/uv):**
+   ```sh
+   pip install uv
+   ```
 
-1. Create a virtual env (optional)
+2. **Create a `.env` file in the project root:**
+   ```
+   GOOGLE_API_KEY="YOUR_API_KEY"
+   ```
 
-2. Create a Folder named .streamlit and inside this folder create a file secrets.toml and in that file write your API key in this format:
+3. **Install dependencies:**
+   ```sh
+   uv add -r requirements.txt
+   ```
 
-```bash
-GOOGLE_API_KEY="YOUR_API_KEY"
-```
-You can Generate API KEY from this link: https://aistudio.google.com/apikey
+4. **Run the app:**
+   ```sh
+   streamlit run main.py
+   ```
 
-3. Open Terminal and run this command:
+## Usage
 
-```bash
-pip install -q -r requirements.txt
-```
-
-4. If you did everything correct then run this command:
-
-```bash
-streamlit run main.py
-```
-
-## Extra:
-You can Change models in main.py file,  I used Google Gemini Models which are free and provide large context windows.
+- Enter a YouTube URL.
+- Click "Generate Summary" or "Generate Quiz".
+- Enjoy your transcript summary

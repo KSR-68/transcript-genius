@@ -1,0 +1,12 @@
+[project]
+name = "transcript-genius"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "dotenv>=0.9.9",
+    "google-generativeai>=0.8.5",
+    "streamlit>=1.47.0",
+    "youtube-transcript-api>=1.1.1",
+]
